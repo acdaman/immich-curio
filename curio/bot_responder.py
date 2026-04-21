@@ -1,15 +1,36 @@
 """Telegram bot responder — delivers photos for review and processes approve/reject callbacks."""
 
 import logging
+from datetime import datetime, timezone
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, ContextTypes
 
 from curio.config import get_config
 from curio.db import get_next_queued_asset_id
-from curio.immich import add_to_print_album, apply_tag, get_thumbnail, mark_favorite
+from curio.immich import add_to_print_album, apply_tag, get_asset_info, get_thumbnail, mark_favorite
 
 logger = logging.getLogger(__name__)
+
+
+def _build_caption(asset_info: dict) -> str:
+    parts = []
+
+    local_dt_str = asset_info.get("localDateTime") or asset_info.get("fileCreatedAt", "")
+    if local_dt_str:
+        try:
+            dt = datetime.fromisoformat(local_dt_str.replace("Z", "+00:00"))
+            parts.append(dt.strftime("%-d %B %Y"))
+        except ValueError:
+            parts.append(local_dt_str[:10])
+
+    cfg = get_config()
+    if cfg.immich_public_url:
+        asset_id = asset_info["id"]
+        url = f"{cfg.immich_public_url.rstrip('/')}/photos/{asset_id}"
+        parts.append(url)
+
+    return "\n".join(parts)
 
 
 async def send_next_photo(bot: Bot, chat_id: str) -> bool:
@@ -21,9 +42,9 @@ async def send_next_photo(bot: Bot, chat_id: str) -> bool:
         return False
 
     try:
-        image_bytes = await get_thumbnail(asset_id)
+        image_bytes, asset_info = await _fetch_photo_and_info(asset_id)
     except Exception as e:
-        logger.error("Failed to fetch thumbnail for %s: %s", asset_id, e)
+        logger.error("Failed to fetch photo %s: %s", asset_id, e)
         await bot.send_message(chat_id=chat_id, text=f"Error fetching photo {asset_id} — skipping.")
         await apply_tag(asset_id, "print/telegram/sent")  # prevent retry loop
         return False
@@ -36,10 +57,20 @@ async def send_next_photo(bot: Bot, chat_id: str) -> bool:
         ]
     ])
 
-    await bot.send_photo(chat_id=chat_id, photo=image_bytes, reply_markup=keyboard)
+    caption = _build_caption(asset_info)
+    await bot.send_photo(chat_id=chat_id, photo=image_bytes, caption=caption or None, reply_markup=keyboard)
     await apply_tag(asset_id, "print/telegram/sent")
     logger.info("Sent %s for review", asset_id)
     return True
+
+
+async def _fetch_photo_and_info(asset_id: str) -> tuple[bytes, dict]:
+    import asyncio
+    image_bytes, asset_info = await asyncio.gather(
+        get_thumbnail(asset_id),
+        get_asset_info(asset_id),
+    )
+    return image_bytes, asset_info
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

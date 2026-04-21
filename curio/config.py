@@ -20,6 +20,8 @@ class Config(BaseSettings):
     telegram_bot_token: str
     telegram_chat_id: str
 
+    immich_public_url: str = ""  # external URL for links, e.g. https://photos.yourdomain.com
+
     queue_target_size: int = 10
     dry_run: bool = False
     log_level: str = "INFO"

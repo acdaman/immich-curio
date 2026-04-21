@@ -16,6 +16,13 @@ def _client() -> httpx.AsyncClient:
     )
 
 
+async def get_asset_info(asset_id: str) -> dict:
+    async with _client() as client:
+        resp = await client.get(f"/api/assets/{asset_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def get_thumbnail(asset_id: str) -> bytes:
     async with _client() as client:
         resp = await client.get(f"/api/assets/{asset_id}/thumbnail", params={"size": "preview"})
