@@ -59,6 +59,28 @@ def get_unscored_asset_ids(limit: int) -> list[str]:
             return [row[0] for row in cur.fetchall()]
 
 
+def get_orphaned_sent_asset_ids() -> list[str]:
+    """Return assets tagged print/telegram/sent but with no decision — orphaned by a restart."""
+    cfg = get_config()
+    sql = """
+        SELECT a.id FROM asset a
+        JOIN tag_asset ta ON ta."assetId" = a.id
+        JOIN tag t ON t.id = ta."tagId"
+        WHERE a."ownerId" = %s
+        AND t.value = 'print/telegram/sent'
+        AND NOT EXISTS (
+            SELECT 1 FROM tag_asset ta2
+            JOIN tag t2 ON t2.id = ta2."tagId"
+            WHERE ta2."assetId" = a.id
+            AND t2.value IN ('print/queued', 'print/rejected', 'print/printed')
+        )
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (cfg.immich_user_id,))
+            return [row[0] for row in cur.fetchall()]
+
+
 def get_next_queued_asset_id() -> str | None:
     """Return one scored/queued asset that hasn't been sent to Telegram yet."""
     cfg = get_config()

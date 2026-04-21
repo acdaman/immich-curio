@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from curio.config import get_config
 from curio.db import get_next_queued_asset_id
@@ -107,8 +107,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await send_next_photo(context.bot, cfg.telegram_chat_id)
 
 
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cfg = get_config()
+    await send_next_photo(context.bot, cfg.telegram_chat_id)
+
+
 def build_application() -> Application:
     cfg = get_config()
     app = ApplicationBuilder().token(cfg.telegram_bot_token).build()
+    app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CallbackQueryHandler(handle_callback))
     return app

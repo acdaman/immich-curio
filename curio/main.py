@@ -6,6 +6,8 @@ import signal
 
 from curio.bot_responder import build_application, send_next_photo
 from curio.config import get_config
+from curio.db import get_orphaned_sent_asset_ids
+from curio.immich import remove_tag
 from curio.queue_filler import queue_filler_loop
 from curio.schema_validator import validate_schema
 
@@ -33,6 +35,13 @@ async def run() -> None:
         await app.start()
         await app.updater.start_polling(drop_pending_updates=True)
         logger.info("Bot polling started")
+
+        # Recover any photos sent before a previous restart but never decided on
+        orphans = get_orphaned_sent_asset_ids()
+        if orphans:
+            logger.info("Recovering %d orphaned photo(s) — removing print/telegram/sent", len(orphans))
+            for asset_id in orphans:
+                await remove_tag(asset_id, "print/telegram/sent")
 
         # Send the first photo immediately so the queue isn't silent at startup
         sent = await send_next_photo(app.bot, cfg.telegram_chat_id)
