@@ -1,0 +1,6 @@
+python-telegram-bot[asyncio]
+httpx
+psycopg2-binary
+google-genai
+pydantic-settings
+python-dotenv
