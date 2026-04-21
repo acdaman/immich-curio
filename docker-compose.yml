@@ -4,9 +4,8 @@ services:
     restart: unless-stopped
     env_file: .env
     networks:
-      - immich-network
+      - postgres-net
 
 networks:
-  immich-network:
+  postgres-net:
     external: true
-    name: immich_default
