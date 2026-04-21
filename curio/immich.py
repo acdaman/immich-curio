@@ -68,3 +68,14 @@ async def add_to_print_album(asset_id: str) -> None:
             f"/api/albums/{PRINT_ALBUM_ID}/assets", json={"ids": [asset_id]}
         )
         resp.raise_for_status()
+
+
+async def mark_favorite(asset_id: str) -> None:
+    cfg = get_config()
+    if cfg.dry_run:
+        print(f"[DRY RUN] mark_favorite({asset_id!r})")
+        return
+
+    async with _client() as client:
+        resp = await client.put("/api/assets", json={"ids": [asset_id], "isFavorite": True})
+        resp.raise_for_status()
