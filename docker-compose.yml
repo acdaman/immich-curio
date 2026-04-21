@@ -1,0 +1,12 @@
+services:
+  curio:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - immich-network
+
+networks:
+  immich-network:
+    external: true
+    name: immich_default

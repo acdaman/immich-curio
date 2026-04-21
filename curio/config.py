@@ -8,7 +8,7 @@ class Config(BaseSettings):
     immich_api_key: str
     immich_user_id: str
 
-    db_host: str = "postgres_db"
+    db_host: str = "immich_postgres"
     db_port: int = 5432
     db_name: str = "immich"
     db_user: str = "immich_reader"
@@ -22,6 +22,7 @@ class Config(BaseSettings):
 
     queue_target_size: int = 10
     dry_run: bool = False
+    log_level: str = "INFO"
 
     @property
     def immich_base_url(self) -> str:

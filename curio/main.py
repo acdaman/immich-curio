@@ -9,14 +9,19 @@ from curio.config import get_config
 from curio.queue_filler import queue_filler_loop
 from curio.schema_validator import validate_schema
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
+def _configure_logging() -> None:
+    cfg = get_config()
+    logging.basicConfig(
+        level=cfg.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+
 async def run() -> None:
+    _configure_logging()
     logger.info("Curio starting — validating schema")
     validate_schema()
     logger.info("Schema OK")
