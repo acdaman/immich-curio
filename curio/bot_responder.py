@@ -49,13 +49,11 @@ async def send_next_photo(bot: Bot, chat_id: str) -> bool:
         await apply_tag(asset_id, "print/telegram/sent")  # prevent retry loop
         return False
 
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✓ Approve", callback_data=f"approve:{asset_id}"),
-            InlineKeyboardButton("★ Like", callback_data=f"like:{asset_id}"),
-            InlineKeyboardButton("✗ Reject", callback_data=f"reject:{asset_id}"),
-        ]
-    ])
+    buttons = [InlineKeyboardButton("✓ Approve", callback_data=f"approve:{asset_id}")]
+    if not asset_info.get("isFavorite"):
+        buttons.append(InlineKeyboardButton("★ Like", callback_data=f"like:{asset_id}"))
+    buttons.append(InlineKeyboardButton("✗ Reject", callback_data=f"reject:{asset_id}"))
+    keyboard = InlineKeyboardMarkup([buttons])
 
     caption = _build_caption(asset_info)
     await bot.send_photo(chat_id=chat_id, photo=image_bytes, caption=caption or None, reply_markup=keyboard)

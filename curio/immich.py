@@ -31,11 +31,19 @@ async def get_thumbnail(asset_id: str) -> bytes:
 
 
 async def _ensure_tag(client: httpx.AsyncClient, tag_path: str) -> str:
-    """Create tag if needed, return its ID."""
+    """Create tag if needed, return its ID. Falls back to GET if tag already exists."""
     resp = await client.post("/api/tags", json={"name": tag_path})
-    if resp.status_code not in (200, 201):
-        resp.raise_for_status()
-    return resp.json()["id"]
+    if resp.status_code in (200, 201):
+        return resp.json()["id"]
+    # 400 or 409 means the tag already exists — find it by value
+    if resp.status_code in (400, 409):
+        tags_resp = await client.get("/api/tags")
+        tags_resp.raise_for_status()
+        for tag in tags_resp.json():
+            if tag.get("value") == tag_path:
+                return tag["id"]
+    resp.raise_for_status()
+    raise RuntimeError(f"Could not find or create tag {tag_path!r}")
 
 
 async def apply_tag(asset_id: str, tag_path: str) -> None:
