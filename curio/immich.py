@@ -6,6 +6,9 @@ from curio.config import get_config
 
 PRINT_ALBUM_ID = "b2f416c7-4f72-4c4c-a138-c7b23978eabc"
 
+# tag value → tag ID, populated lazily and updated on creation
+_tag_cache: dict[str, str] = {}
+
 
 def _client() -> httpx.AsyncClient:
     cfg = get_config()
@@ -14,6 +17,13 @@ def _client() -> httpx.AsyncClient:
         headers={"x-api-key": cfg.immich_api_key, "Accept": "application/json"},
         timeout=30,
     )
+
+
+async def _load_tag_cache(client: httpx.AsyncClient) -> None:
+    resp = await client.get("/api/tags")
+    resp.raise_for_status()
+    for tag in resp.json():
+        _tag_cache[tag["value"]] = tag["id"]
 
 
 async def get_asset_info(asset_id: str) -> dict:
@@ -31,17 +41,23 @@ async def get_thumbnail(asset_id: str) -> bytes:
 
 
 async def _ensure_tag(client: httpx.AsyncClient, tag_path: str) -> str:
-    """Create tag if needed, return its ID. Falls back to GET if tag already exists."""
+    """Return tag ID from cache, creating the tag if it doesn't exist yet."""
+    if tag_path in _tag_cache:
+        return _tag_cache[tag_path]
+
+    # Not cached — try to create it
     resp = await client.post("/api/tags", json={"name": tag_path})
     if resp.status_code in (200, 201):
-        return resp.json()["id"]
-    # 400 or 409 means the tag already exists — find it by value
+        tag_id = resp.json()["id"]
+        _tag_cache[tag_path] = tag_id
+        return tag_id
+
+    # Already exists (400/409) — load all tags into cache and retry
     if resp.status_code in (400, 409):
-        tags_resp = await client.get("/api/tags")
-        tags_resp.raise_for_status()
-        for tag in tags_resp.json():
-            if tag.get("value") == tag_path:
-                return tag["id"]
+        await _load_tag_cache(client)
+        if tag_path in _tag_cache:
+            return _tag_cache[tag_path]
+
     resp.raise_for_status()
     raise RuntimeError(f"Could not find or create tag {tag_path!r}")
 
