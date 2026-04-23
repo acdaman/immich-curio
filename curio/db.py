@@ -36,7 +36,7 @@ def get_queue_depth() -> int:
 
 
 def get_unscored_asset_ids(limit: int) -> list[tuple[str, bool]]:
-    """Return (asset_id, is_favorite) tuples with no print/* tag, 50/50 split between favorites and general."""
+    """Return (asset_id, is_favorite) tuples with no print/* tag, 30/70 split between favorites and general."""
     cfg = get_config()
     base_filter = """
         FROM asset a
@@ -49,7 +49,8 @@ def get_unscored_asset_ids(limit: int) -> list[tuple[str, bool]]:
             WHERE ta."assetId" = a.id AND t.value LIKE 'print/%%'
         )
     """
-    half = max(1, limit // 2)
+    fav_count = max(1, round(limit * 0.3))
+    gen_count = limit - fav_count
     sql = f"""
         (SELECT a.id, a."isFavorite" {base_filter} AND a."isFavorite" = true  ORDER BY RANDOM() LIMIT %s)
         UNION ALL
@@ -57,7 +58,7 @@ def get_unscored_asset_ids(limit: int) -> list[tuple[str, bool]]:
     """
     with _connect() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (cfg.immich_user_id, half, cfg.immich_user_id, half))
+            cur.execute(sql, (cfg.immich_user_id, fav_count, cfg.immich_user_id, gen_count))
             return [(row[0], row[1]) for row in cur.fetchall()]
 
 
