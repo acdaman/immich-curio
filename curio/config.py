@@ -22,8 +22,11 @@ class Config(BaseSettings):
 
     immich_public_url: str = ""  # external URL for links, e.g. https://photos.yourdomain.com
     scoring_prompt_path: str = "/app/prompt.md"
+    group_scoring_prompt_path: str = "/app/prompt_group.md"
 
     queue_target_size: int = 10
+    burst_window_seconds: int = 60
+    burst_group_max_size: int = 15
     dry_run: bool = False
     log_level: str = "INFO"
 

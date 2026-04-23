@@ -20,6 +20,12 @@ def _load_prompt() -> str:
         return f.read().strip()
 
 
+def _load_group_prompt() -> str:
+    cfg = get_config()
+    with open(cfg.group_scoring_prompt_path) as f:
+        return f.read().strip()
+
+
 def _is_rate_limit(exc: Exception) -> bool:
     msg = str(exc).lower()
     return "429" in msg or "resource_exhausted" in msg or "quota" in msg or "rate" in msg
@@ -36,8 +42,27 @@ def _parse_response(text: str) -> dict:
     return result
 
 
-async def _call_gemini(client, cfg, contents) -> dict:
-    """Call Gemini with up to 3 retries on 429, exponential backoff."""
+def _parse_group_response(text: str, expected_ids: set[str]) -> dict[str, dict]:
+    """Parse group scoring response. Raises ValueError on structural problems."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    result = json.loads(text)
+    scores = result.get("scores")
+    if not isinstance(scores, dict):
+        raise ValueError(f"Missing or invalid 'scores' dict in response")
+    missing = expected_ids - set(scores.keys())
+    if missing:
+        raise ValueError(f"Gemini response missing asset IDs: {missing}")
+    for asset_id, entry in scores.items():
+        if entry.get("score") not in ("yes", "no"):
+            raise ValueError(f"Invalid score for {asset_id!r}: {entry.get('score')!r}")
+    return {k: v for k, v in scores.items() if k in expected_ids}
+
+
+async def _call_gemini_raw(client, cfg, contents) -> str:
+    """Call Gemini with up to 3 retries on 429. Returns raw response text."""
     backoff = RATE_LIMIT_BACKOFF
     for attempt in range(3):
         try:
@@ -46,10 +71,7 @@ async def _call_gemini(client, cfg, contents) -> dict:
                 model=cfg.gemini_model,
                 contents=contents,
             )
-            return _parse_response(response.text)
-        except (json.JSONDecodeError, ValueError) as e:
-            # Bad JSON — not a rate limit, don't retry
-            raise
+            return response.text
         except Exception as e:
             if _is_rate_limit(e):
                 logger.warning("Gemini 429 — sleeping %ds before retry (attempt %d/3)", backoff, attempt + 1)
@@ -58,6 +80,12 @@ async def _call_gemini(client, cfg, contents) -> dict:
             else:
                 raise
     raise RuntimeError("Gemini rate limit retries exhausted")
+
+
+async def _call_gemini(client, cfg, contents) -> dict:
+    """Call Gemini with up to 3 retries on 429, exponential backoff."""
+    raw = await _call_gemini_raw(client, cfg, contents)
+    return _parse_response(raw)
 
 
 async def score_photo(image_bytes: bytes, asset_id: str) -> dict | None:
@@ -89,6 +117,61 @@ async def score_photo(image_bytes: bytes, asset_id: str) -> dict | None:
 
     except Exception as e:
         logger.warning("Gemini error for %s: %s", asset_id, e)
+        return None
+
+    finally:
+        await asyncio.sleep(RATE_LIMIT_SLEEP)
+
+
+async def score_photo_group(
+    images_with_ids: list[tuple[bytes, str]],
+) -> dict[str, dict] | None:
+    """Score a sequence of related photos as a group.
+
+    Returns {asset_id: {"score": "yes"|"no", "reason": str}} for every ID provided,
+    or None on unrecoverable failure.
+
+    images_with_ids: list of (jpeg_bytes, asset_id), chronological order.
+    """
+    if not images_with_ids:
+        return None
+
+    cfg = get_config()
+    client = genai.Client(api_key=cfg.gemini_api_key)
+    prompt = _load_group_prompt()
+    expected_ids = {asset_id for _, asset_id in images_with_ids}
+
+    contents: list = [
+        f"You are scoring a sequence of {len(images_with_ids)} photos taken within a short time window. "
+        f"Use exactly these asset IDs in your response (no others):"
+    ]
+    for i, (image_bytes, asset_id) in enumerate(images_with_ids, 1):
+        contents.append(f"Photo {i} — asset ID: {asset_id}")
+        contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
+    contents.append(prompt)
+
+    async def _attempt(extra: str = "") -> dict[str, dict]:
+        c = contents if not extra else contents + [extra]
+        raw = await _call_gemini_raw(client, cfg, c)
+        return _parse_group_response(raw, expected_ids)
+
+    try:
+        return await _attempt()
+
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning("Group scoring parse error (%s) — retrying with JSON reminder", e)
+        try:
+            await asyncio.sleep(RATE_LIMIT_SLEEP)
+            return await _attempt(
+                "\n\nIMPORTANT: Respond with ONLY valid JSON. "
+                "Every asset ID listed above MUST appear in 'scores'. Do not invent IDs."
+            )
+        except Exception as e2:
+            logger.warning("Group scoring retry failed: %s", e2)
+            return None
+
+    except Exception as e:
+        logger.warning("Gemini group scoring error: %s", e)
         return None
 
     finally:

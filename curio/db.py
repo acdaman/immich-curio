@@ -61,6 +61,86 @@ def get_unscored_asset_ids(limit: int) -> list[tuple[str, bool]]:
             return [(row[0], row[1]) for row in cur.fetchall()]
 
 
+def get_burst_peers(
+    seed_asset_id: str,
+    window_seconds: int = 60,
+) -> list[tuple[str, bool, int | None, int | None, str | None]]:
+    """Return all unscored assets in the same time+camera window as seed_asset_id.
+
+    Includes the seed itself. Returns [] if the seed has no EXIF timestamp.
+    Tuple: (asset_id, is_favorite, width, height, duplicate_id)
+    Ordered chronologically.
+    """
+    cfg = get_config()
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ae."dateTimeOriginal", ae.model
+                FROM asset_exif ae
+                WHERE ae."assetId" = %s
+                """,
+                (seed_asset_id,),
+            )
+            row = cur.fetchone()
+            if row is None or row[0] is None:
+                return []
+
+            seed_ts, seed_model = row
+
+            if seed_model:
+                cur.execute(
+                    """
+                    SELECT a.id, a."isFavorite",
+                           ae."exifImageWidth", ae."exifImageHeight",
+                           a."duplicateId"
+                    FROM asset a
+                    JOIN asset_exif ae ON ae."assetId" = a.id
+                    WHERE a."ownerId" = %s
+                      AND a.type = 'IMAGE'
+                      AND a.status = 'active'
+                      AND a.visibility != 'archive'
+                      AND ae."dateTimeOriginal" BETWEEN %s - INTERVAL '1 second' * %s
+                                                      AND %s + INTERVAL '1 second' * %s
+                      AND ae.model = %s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM tag_asset ta JOIN tag t ON t.id = ta."tagId"
+                          WHERE ta."assetId" = a.id AND t.value LIKE 'print/%%'
+                      )
+                    ORDER BY ae."dateTimeOriginal"
+                    """,
+                    (cfg.immich_user_id,
+                     seed_ts, window_seconds, seed_ts, window_seconds,
+                     seed_model),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT a.id, a."isFavorite",
+                           ae."exifImageWidth", ae."exifImageHeight",
+                           a."duplicateId"
+                    FROM asset a
+                    JOIN asset_exif ae ON ae."assetId" = a.id
+                    WHERE a."ownerId" = %s
+                      AND a.type = 'IMAGE'
+                      AND a.status = 'active'
+                      AND a.visibility != 'archive'
+                      AND ae."dateTimeOriginal" BETWEEN %s - INTERVAL '1 second' * %s
+                                                      AND %s + INTERVAL '1 second' * %s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM tag_asset ta JOIN tag t ON t.id = ta."tagId"
+                          WHERE ta."assetId" = a.id AND t.value LIKE 'print/%%'
+                      )
+                    ORDER BY ae."dateTimeOriginal"
+                    """,
+                    (cfg.immich_user_id,
+                     seed_ts, window_seconds, seed_ts, window_seconds),
+                )
+
+            return [(r[0], r[1], r[2], r[3], str(r[4]) if r[4] else None)
+                    for r in cur.fetchall()]
+
+
 def get_sample_approved_asset_ids(limit: int) -> list[str]:
     """Return a random sample of assets approved for printing (tagged print/queued)."""
     cfg = get_config()

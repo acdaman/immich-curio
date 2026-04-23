@@ -10,5 +10,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY curio/ curio/
+COPY prompt.md prompt_group.md ./
 
 CMD ["python", "-m", "curio.main"]

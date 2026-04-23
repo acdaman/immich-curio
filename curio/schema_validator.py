@@ -27,6 +27,9 @@ EXPECTED_TABLES = {
     "album_asset": {
         "required_columns": ["albumId", "assetId"],
     },
+    "asset_exif": {
+        "required_columns": ["assetId", "dateTimeOriginal"],
+    },
 }
 
 
