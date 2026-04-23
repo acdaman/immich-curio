@@ -145,6 +145,7 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Pipeline",
         f"  Unscored backlog {s['unscored']:>7,}",
         f"  Gemini yes       {s['gemini_yes']:>7,}  ({_pct(s['gemini_yes'], s['total_scored'])})",
+        f"  Auto yes (fav)   {s['auto_yes']:>7,}  ({_pct(s['auto_yes'], s['total_scored'])})",
         f"  Gemini maybe     {s['gemini_maybe']:>7,}  ({_pct(s['gemini_maybe'], s['total_scored'])})",
         f"  Gemini no        {s['gemini_no_total']:>7,}  ({_pct(s['gemini_no_total'], s['total_scored'])})",
         f"    solo           {s['gemini_no']:>7,}",
@@ -165,9 +166,14 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"  Maybe -> approved{_pct(s['maybe_approved'], s['maybe_approved'] + s['maybe_rejected']):>7}",
         f"  Maybe -> rejected{_pct(s['maybe_rejected'], s['maybe_approved'] + s['maybe_rejected']):>7}",
         "",
+        "Fav calibration",
+        f"  Auto -> approved {_pct(s['auto_approved'], s['auto_approved'] + s['auto_rejected']):>7}",
+        f"  Auto -> rejected {_pct(s['auto_rejected'], s['auto_approved'] + s['auto_rejected']):>7}",
+        "",
         "Liked breakdown",
-        f"  Were already favs{s['liked_from_yes']:>7,}  ({_pct(s['liked_from_yes'], s['liked'])})",
-        f"  New finds        {s['liked_from_maybe']:>7,}  ({_pct(s['liked_from_maybe'], s['liked'])})",
+        f"  From Gemini yes  {s['liked_from_yes']:>7,}  ({_pct(s['liked_from_yes'], s['liked'])})",
+        f"  From auto (fav)  {s['liked_from_auto']:>7,}  ({_pct(s['liked_from_auto'], s['liked'])})",
+        f"  From maybe       {s['liked_from_maybe']:>7,}  ({_pct(s['liked_from_maybe'], s['liked'])})",
     ])
 
     await context.bot.send_message(

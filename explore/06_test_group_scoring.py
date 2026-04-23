@@ -70,11 +70,11 @@ async def test_group(seed_id: str, group: list, group_num: int) -> None:
         print(f"  {i}. {asset_id[:8]}... fav={is_fav} res={w}x{h}{dup_marker}{seed_marker}")
 
     print("\nFetching thumbnails...")
-    thumbnails: list[tuple[bytes, str]] = []
-    for asset_id, _, *_ in group:
+    thumbnails: list[tuple[bytes, str, bool]] = []
+    for asset_id, is_fav, *_ in group:
         try:
             img = await get_thumbnail(asset_id)
-            thumbnails.append((img, asset_id))
+            thumbnails.append((img, asset_id, is_fav))
             print(f"  {asset_id[:8]}... {len(img)//1024}KB OK")
         except Exception as e:
             print(f"  {asset_id[:8]}... FAILED: {e}")

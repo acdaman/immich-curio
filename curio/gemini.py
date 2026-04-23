@@ -124,14 +124,14 @@ async def score_photo(image_bytes: bytes, asset_id: str) -> dict | None:
 
 
 async def score_photo_group(
-    images_with_ids: list[tuple[bytes, str]],
+    images_with_ids: list[tuple[bytes, str, bool]],
 ) -> dict[str, dict] | None:
     """Score a sequence of related photos as a group.
 
     Returns {asset_id: {"score": "yes"|"no", "reason": str}} for every ID provided,
     or None on unrecoverable failure.
 
-    images_with_ids: list of (jpeg_bytes, asset_id), chronological order.
+    images_with_ids: list of (jpeg_bytes, asset_id, is_favorite), chronological order.
     """
     if not images_with_ids:
         return None
@@ -139,14 +139,15 @@ async def score_photo_group(
     cfg = get_config()
     client = genai.Client(api_key=cfg.gemini_api_key)
     prompt = _load_group_prompt()
-    expected_ids = {asset_id for _, asset_id in images_with_ids}
+    expected_ids = {asset_id for _, asset_id, _ in images_with_ids}
 
     contents: list = [
         f"You are scoring a sequence of {len(images_with_ids)} photos taken within a short time window. "
         f"Use exactly these asset IDs in your response (no others):"
     ]
-    for i, (image_bytes, asset_id) in enumerate(images_with_ids, 1):
-        contents.append(f"Photo {i} — asset ID: {asset_id}")
+    for i, (image_bytes, asset_id, is_favorite) in enumerate(images_with_ids, 1):
+        fav_marker = " [FAVOURITE]" if is_favorite else ""
+        contents.append(f"Photo {i} — asset ID: {asset_id}{fav_marker}")
         contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
     contents.append(prompt)
 

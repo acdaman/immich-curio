@@ -13,6 +13,9 @@ This is a family collection. Great photos share these qualities:
 
 Wide scenic shots where people appear small or distant are generally not suitable.
 
+## Favourite markers
+Some photos are labelled **[FAVOURITE]** — this means the owner has already expressed a preference for that photo. Give these photos extra weight when selecting between otherwise similar shots. However, if a non-favourite photo is clearly superior (sharper, better expression, better composition), prefer it and explain why.
+
 ## Your task — three steps
 
 ### Step 1: Identify distinct moments
@@ -28,11 +31,12 @@ Apply the same criteria as single-photo scoring:
 
 If a moment is NOT print-worthy, score ALL photos from that moment as "no".
 
-### Step 3: For each print-worthy moment — select the best 1-2 photos
-From the photos belonging to a worthy moment:
-- Select the sharpest, most emotionally resonant shot(s)
-- If two shots are essentially identical, keep only the best one
-- Score the selected photo(s) as "yes", all others from that moment as "no"
+### Step 3: For each print-worthy moment — select exactly 1 photo
+From the photos belonging to a worthy moment, pick the single best shot:
+- Sharpest focus, strongest expression, best composition
+- If two shots look nearly the same (same subject, same pose, taken within seconds), they are the same moment — pick one and reject the rest
+- Only select a second photo if it captures something genuinely different: a different subject, a clearly distinct expression, or a composition that adds something the first does not
+- When in doubt, pick one. The owner would rather see a hidden gem than clear near-duplicate shots
 
 Do not use "maybe" — within a sequence comparison, make a definitive choice.
 

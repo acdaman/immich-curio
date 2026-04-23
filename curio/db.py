@@ -21,7 +21,7 @@ def get_queue_depth() -> int:
         JOIN tag_asset ta ON ta."assetId" = a.id
         JOIN tag t ON t.id = ta."tagId"
         WHERE a."ownerId" = %s
-        AND t.value IN ('print/scored/yes', 'print/scored/maybe')
+        AND t.value IN ('print/scored/yes', 'print/scored/yes/auto', 'print/scored/maybe')
         AND NOT EXISTS (
             SELECT 1 FROM tag_asset ta2
             JOIN tag t2 ON t2.id = ta2."tagId"
@@ -256,19 +256,20 @@ def get_stats() -> dict:
                 """, (uid, tag))
 
             gemini_yes        = tag_count("print/scored/yes")
+            auto_yes          = tag_count("print/scored/yes/auto")
             gemini_maybe      = tag_count("print/scored/maybe")
             gemini_no         = tag_count("print/scored/no")
             gemini_no_group   = tag_count("print/scored/no/group")
             gemini_no_dup     = tag_count("print/scored/no/duplicate")
             gemini_no_total   = gemini_no + gemini_no_group + gemini_no_dup
-            total_scored = gemini_yes + gemini_maybe + gemini_no_total
+            total_scored = gemini_yes + auto_yes + gemini_maybe + gemini_no_total
 
             queue_depth = count(cur, """
                 SELECT COUNT(DISTINCT a.id) FROM asset a
                 JOIN tag_asset ta ON ta."assetId" = a.id
                 JOIN tag t ON t.id = ta."tagId"
                 WHERE a."ownerId" = %s
-                AND t.value IN ('print/scored/yes', 'print/scored/maybe')
+                AND t.value IN ('print/scored/yes', 'print/scored/yes/auto', 'print/scored/maybe')
                 AND NOT EXISTS (
                     SELECT 1 FROM tag_asset ta2 JOIN tag t2 ON t2.id = ta2."tagId"
                     WHERE ta2."assetId" = a.id
@@ -302,20 +303,24 @@ def get_stats() -> dict:
                     WHERE a."ownerId" = %s AND t1.value = %s AND t2.value = %s
                 """, (uid, score_tag, decision_tag))
 
-            yes_approved = tag_pair_count("print/scored/yes",   "print/queued")
-            yes_rejected = tag_pair_count("print/scored/yes",   "print/rejected")
-            maybe_approved = tag_pair_count("print/scored/maybe", "print/queued")
-            maybe_rejected = tag_pair_count("print/scored/maybe", "print/rejected")
+            yes_approved = tag_pair_count("print/scored/yes",      "print/queued")
+            yes_rejected = tag_pair_count("print/scored/yes",      "print/rejected")
+            auto_approved = tag_pair_count("print/scored/yes/auto", "print/queued")
+            auto_rejected = tag_pair_count("print/scored/yes/auto", "print/rejected")
+            maybe_approved = tag_pair_count("print/scored/maybe",  "print/queued")
+            maybe_rejected = tag_pair_count("print/scored/maybe",  "print/rejected")
 
             # Liked breakdown: yes-scored liked = likely pre-existing favs, maybe-scored = new finds
-            liked_from_yes   = tag_pair_count("print/scored/yes",   "print/liked")
-            liked_from_maybe = tag_pair_count("print/scored/maybe", "print/liked")
+            liked_from_yes   = tag_pair_count("print/scored/yes",      "print/liked")
+            liked_from_auto  = tag_pair_count("print/scored/yes/auto", "print/liked")
+            liked_from_maybe = tag_pair_count("print/scored/maybe",    "print/liked")
 
     return {
         "library_total": library_total,
         "library_favs": library_favs,
         "unscored": unscored,
         "gemini_yes": gemini_yes,
+        "auto_yes": auto_yes,
         "gemini_maybe": gemini_maybe,
         "gemini_no": gemini_no,
         "gemini_no_group": gemini_no_group,
@@ -329,9 +334,12 @@ def get_stats() -> dict:
         "total_reviewed": total_reviewed,
         "yes_approved": yes_approved,
         "yes_rejected": yes_rejected,
+        "auto_approved": auto_approved,
+        "auto_rejected": auto_rejected,
         "maybe_approved": maybe_approved,
         "maybe_rejected": maybe_rejected,
         "liked_from_yes": liked_from_yes,
+        "liked_from_auto": liked_from_auto,
         "liked_from_maybe": liked_from_maybe,
     }
 
@@ -344,7 +352,7 @@ def get_next_queued_asset_id() -> str | None:
         JOIN tag_asset ta ON ta."assetId" = a.id
         JOIN tag t ON t.id = ta."tagId"
         WHERE a."ownerId" = %s
-        AND t.value IN ('print/scored/yes', 'print/scored/maybe')
+        AND t.value IN ('print/scored/yes', 'print/scored/yes/auto', 'print/scored/maybe')
         AND NOT EXISTS (
             SELECT 1 FROM tag_asset ta2
             JOIN tag t2 ON t2.id = ta2."tagId"

@@ -19,10 +19,10 @@ _NO_ASSETS_SLEEP = 300   # seconds to wait when there are no unscored assets lef
 async def _score_and_tag(asset_id: str, is_favorite: bool = False) -> None:
     if is_favorite:
         try:
-            await apply_tag(asset_id, "print/scored/yes")
-            logger.info("Auto-scored %s → yes (favorite)", asset_id)
+            await apply_tag(asset_id, "print/scored/yes/auto")
+            logger.info("Auto-scored %s → yes/auto (favorite)", asset_id)
         except Exception as e:
-            logger.error("Failed to apply tag print/scored/yes to %s: %s", asset_id, e)
+            logger.error("Failed to apply tag print/scored/yes/auto to %s: %s", asset_id, e)
         return
 
     try:
@@ -131,30 +131,31 @@ async def _process_burst_group(
 
     logger.info("Processing burst group of %d (seed: %s)", len(group), seed_id)
 
-    # Case: any member is a favorite → auto-tag, no Gemini
-    if any(is_fav for _, is_fav, *_ in group):
-        logger.info("Burst group has favorite(s) — auto-tagging (yes/no/group)")
-        for asset_id, is_fav, *_ in group:
-            tag = "print/scored/yes" if is_fav else "print/scored/no/group"
+    # Auto-tag any favourites in the group immediately, then let Gemini review all
+    for asset_id, is_fav, *_ in group:
+        if is_fav:
             try:
-                await apply_tag(asset_id, tag)
-                logger.info("Auto-tagged %s → %s (burst favorite rule)", asset_id, tag)
+                await apply_tag(asset_id, "print/scored/yes/auto")
+                logger.info("Auto-tagged %s → yes/auto (favourite in group)", asset_id)
             except Exception as e:
-                logger.error("Failed to tag %s → %s: %s", asset_id, tag, e)
-        return
+                logger.error("Failed to tag %s → yes/auto: %s", asset_id, e)
+
+    if any(is_fav for _, is_fav, *_ in group):
+        logger.info("Burst group has favourite(s) — passing full group to Gemini with [FAVOURITE] markers")
 
     # Case: single photo after deduplication
     if len(group) == 1:
         asset_id, is_fav, *_ = group[0]
-        await _score_and_tag(asset_id, is_fav)
+        if not is_fav:
+            await _score_and_tag(asset_id, is_fav)
         return
 
     # Case: multi-photo group → batch Gemini review
-    thumbnails: list[tuple[bytes, str]] = []
-    for asset_id, _, *_ in group:
+    thumbnails: list[tuple[bytes, str, bool]] = []
+    for asset_id, is_fav, *_ in group:
         try:
             image_bytes = await get_thumbnail(asset_id)
-            thumbnails.append((image_bytes, asset_id))
+            thumbnails.append((image_bytes, asset_id, is_fav))
         except Exception as e:
             logger.warning("Failed thumbnail for %s in burst: %s — excluding", asset_id, e)
 
