@@ -14,20 +14,10 @@ logger = logging.getLogger(__name__)
 RATE_LIMIT_SLEEP = 13    # seconds between successful calls (~4.6 RPM)
 RATE_LIMIT_BACKOFF = 65  # seconds to wait after a 429 before retrying
 
-SCORING_PROMPT = """You are evaluating a photo for physical printing on lustre paper for home wall display.
-Score this photo strictly.
-
-Respond with JSON only — no markdown, no explanation, just the JSON object:
-{
-  "score": "yes" | "maybe" | "no",
-  "reason": "one sentence explanation"
-}
-
-Score "yes" if: sharp focus throughout, strong composition, meaningful or beautiful subject, clearly worth printing.
-Score "maybe" if: decent photo with minor issues — slight blur, awkward crop, good subject but not exceptional.
-Score "no" if: blurry, out of focus, duplicate/similar to many others, screenshot, document, text overlay, low light noise, not suitable for printing.
-
-Target calibration: roughly 20% yes, 40% maybe, 40% no. Be strict — not every decent photo deserves to be printed."""
+def _load_prompt() -> str:
+    cfg = get_config()
+    with open(cfg.scoring_prompt_path) as f:
+        return f.read().strip()
 
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -75,9 +65,10 @@ async def score_photo(image_bytes: bytes, asset_id: str) -> dict | None:
     cfg = get_config()
     client = genai.Client(api_key=cfg.gemini_api_key)
 
+    prompt = _load_prompt()
     contents = [
         types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-        SCORING_PROMPT,
+        prompt,
     ]
 
     try:
@@ -88,7 +79,7 @@ async def score_photo(image_bytes: bytes, asset_id: str) -> dict | None:
         # Retry once with an explicit JSON reminder
         retry_contents = [
             types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
-            SCORING_PROMPT + "\n\nIMPORTANT: Respond with ONLY valid JSON. No markdown. No explanation.",
+            prompt + "\n\nIMPORTANT: Respond with ONLY valid JSON. No markdown. No explanation.",
         ]
         try:
             await asyncio.sleep(RATE_LIMIT_SLEEP)
@@ -102,3 +93,42 @@ async def score_photo(image_bytes: bytes, asset_id: str) -> dict | None:
 
     finally:
         await asyncio.sleep(RATE_LIMIT_SLEEP)
+
+
+async def analyze_decisions(approved_images: list[bytes], rejected_images: list[bytes]) -> str:
+    """Send approved and rejected photo samples to Gemini for pattern analysis.
+
+    Returns Gemini's plain-text analysis of what distinguishes approved from rejected photos.
+    """
+    cfg = get_config()
+    client = genai.Client(api_key=cfg.gemini_api_key)
+
+    contents: list = []
+    if approved_images:
+        contents.append(f"The following {len(approved_images)} photo(s) were APPROVED for printing:")
+        for img in approved_images:
+            contents.append(types.Part.from_bytes(data=img, mime_type="image/jpeg"))
+    else:
+        contents.append("No approved photos were available for this analysis.")
+
+    if rejected_images:
+        contents.append(f"The following {len(rejected_images)} photo(s) were REJECTED:")
+        for img in rejected_images:
+            contents.append(types.Part.from_bytes(data=img, mime_type="image/jpeg"))
+    else:
+        contents.append("No rejected photos were available for this analysis.")
+
+    contents.append(
+        "Analyze the curator's decisions. Answer these three questions concisely:\n"
+        "1. What do the APPROVED photos have in common? (visual quality, composition, subject, mood)\n"
+        "2. What do the REJECTED photos have in common?\n"
+        "3. Any surprising or noteworthy observations about this curator's taste?\n\n"
+        "Be specific. 3-5 bullet points per section. Plain text only, no markdown headers."
+    )
+
+    response = await asyncio.to_thread(
+        client.models.generate_content,
+        model=cfg.gemini_model,
+        contents=contents,
+    )
+    return response.text.strip()

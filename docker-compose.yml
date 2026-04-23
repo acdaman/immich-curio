@@ -5,6 +5,8 @@ services:
     env_file: .env
     environment:
       - TZ=Australia/Sydney
+    volumes:
+      - ./prompt.md:/app/prompt.md:ro
     networks:
       - postgres-net
 

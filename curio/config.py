@@ -21,6 +21,7 @@ class Config(BaseSettings):
     telegram_chat_id: str
 
     immich_public_url: str = ""  # external URL for links, e.g. https://photos.yourdomain.com
+    scoring_prompt_path: str = "/app/prompt.md"
 
     queue_target_size: int = 10
     dry_run: bool = False

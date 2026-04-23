@@ -33,7 +33,8 @@ async def run() -> None:
 
     async with app:
         await app.start()
-        await app.updater.start_polling(drop_pending_updates=True)
+        from telegram import Update
+        await app.updater.start_polling(drop_pending_updates=True, allowed_updates=list(Update.ALL_TYPES))
         logger.info("Bot polling started")
 
         # Recover any photos sent before a previous restart but never decided on
@@ -48,7 +49,10 @@ async def run() -> None:
         if not sent:
             logger.info("No queued photos at startup — queue filler will populate")
 
-        await queue_filler_loop()  # runs forever; PTB tasks run concurrently
+        async def _notify_queue_populated() -> None:
+            await send_next_photo(app.bot, cfg.telegram_chat_id)
+
+        await queue_filler_loop(on_queue_populated=_notify_queue_populated)
 
         # Reached only on clean shutdown
         await app.updater.stop()
