@@ -7,6 +7,7 @@ import signal
 from curio.bot_responder import build_application, send_next_photo
 from curio.config import get_config
 from curio.db import get_orphaned_sent_asset_ids
+from curio.exporter import exporter_loop
 from curio.immich import remove_tag
 from curio.queue_filler import queue_filler_loop
 from curio.schema_validator import validate_schema
@@ -52,7 +53,11 @@ async def run() -> None:
         async def _notify_queue_populated() -> None:
             await send_next_photo(app.bot, cfg.telegram_chat_id)
 
-        await queue_filler_loop(on_queue_populated=_notify_queue_populated)
+        exporter_task = asyncio.create_task(exporter_loop())
+        try:
+            await queue_filler_loop(on_queue_populated=_notify_queue_populated)
+        finally:
+            exporter_task.cancel()
 
         # Reached only on clean shutdown
         await app.updater.stop()

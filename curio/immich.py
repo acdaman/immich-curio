@@ -101,6 +101,23 @@ async def add_to_print_album(asset_id: str) -> None:
         resp.raise_for_status()
 
 
+async def download_original(asset_id: str) -> tuple[bytes, str]:
+    """Return (file_bytes, original_filename) for the asset at full quality."""
+    async with _client() as client:
+        info_resp = await client.get(f"/api/assets/{asset_id}")
+        info_resp.raise_for_status()
+        info = info_resp.json()
+        filename = info.get("originalFileName", f"{asset_id}.jpg")
+
+        dl_resp = await client.get(
+            f"/api/assets/{asset_id}/original",
+            headers={"Accept": "*/*"},
+            timeout=120.0,
+        )
+        dl_resp.raise_for_status()
+        return dl_resp.content, filename
+
+
 async def mark_favorite(asset_id: str) -> None:
     cfg = get_config()
     if cfg.dry_run:

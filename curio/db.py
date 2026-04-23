@@ -344,6 +344,28 @@ def get_stats() -> dict:
     }
 
 
+def get_unexported_queued_asset_ids() -> list[str]:
+    """Assets Adam approved (print/queued) but not yet exported to Syncthing."""
+    cfg = get_config()
+    sql = """
+        SELECT a.id FROM asset a
+        JOIN tag_asset ta ON ta."assetId" = a.id
+        JOIN tag t ON t.id = ta."tagId"
+        WHERE a."ownerId" = %s
+        AND t.value = 'print/queued'
+        AND NOT EXISTS (
+            SELECT 1 FROM tag_asset ta2
+            JOIN tag t2 ON t2.id = ta2."tagId"
+            WHERE ta2."assetId" = a.id
+            AND t2.value = 'print/exported'
+        )
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (cfg.immich_user_id,))
+            return [row[0] for row in cur.fetchall()]
+
+
 def get_next_queued_asset_id() -> str | None:
     """Return one scored/queued asset that hasn't been sent to Telegram yet."""
     cfg = get_config()

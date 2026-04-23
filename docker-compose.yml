@@ -8,6 +8,7 @@ services:
     volumes:
       - ./prompt.md:/app/prompt.md:ro
       - ./prompt_group.md:/app/prompt_group.md:ro
+      - /data/syncthing/curio-prints:/exports
     networks:
       - postgres-net
 

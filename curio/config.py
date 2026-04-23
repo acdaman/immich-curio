@@ -27,6 +27,8 @@ class Config(BaseSettings):
     queue_target_size: int = 10
     burst_window_seconds: int = 60
     burst_group_max_size: int = 15
+    export_dir: str = "/exports"
+
     dry_run: bool = False
     log_level: str = "INFO"
 
