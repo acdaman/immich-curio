@@ -254,15 +254,13 @@ def get_stats() -> dict:
                     WHERE a."ownerId" = %s AND t.value = %s
                 """, (uid, tag))
 
-            gemini_yes   = tag_count("print/scored/yes")
-            gemini_maybe = tag_count("print/scored/maybe")
-            gemini_no    = count(cur, """
-                SELECT COUNT(DISTINCT ta."assetId") FROM tag_asset ta
-                JOIN tag t ON t.id = ta."tagId"
-                JOIN asset a ON a.id = ta."assetId"
-                WHERE a."ownerId" = %s AND t.value LIKE 'print/scored/no%%'
-            """, (uid,))
-            total_scored = gemini_yes + gemini_maybe + gemini_no
+            gemini_yes        = tag_count("print/scored/yes")
+            gemini_maybe      = tag_count("print/scored/maybe")
+            gemini_no         = tag_count("print/scored/no")
+            gemini_no_group   = tag_count("print/scored/no/group")
+            gemini_no_dup     = tag_count("print/scored/no/duplicate")
+            gemini_no_total   = gemini_no + gemini_no_group + gemini_no_dup
+            total_scored = gemini_yes + gemini_maybe + gemini_no_total
 
             queue_depth = count(cur, """
                 SELECT COUNT(DISTINCT a.id) FROM asset a
@@ -319,6 +317,9 @@ def get_stats() -> dict:
         "gemini_yes": gemini_yes,
         "gemini_maybe": gemini_maybe,
         "gemini_no": gemini_no,
+        "gemini_no_group": gemini_no_group,
+        "gemini_no_dup": gemini_no_dup,
+        "gemini_no_total": gemini_no_total,
         "total_scored": total_scored,
         "queue_depth": queue_depth,
         "approved": approved,
