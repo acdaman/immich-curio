@@ -256,7 +256,12 @@ def get_stats() -> dict:
 
             gemini_yes   = tag_count("print/scored/yes")
             gemini_maybe = tag_count("print/scored/maybe")
-            gemini_no    = tag_count("print/scored/no")
+            gemini_no    = count(cur, """
+                SELECT COUNT(DISTINCT ta."assetId") FROM tag_asset ta
+                JOIN tag t ON t.id = ta."tagId"
+                JOIN asset a ON a.id = ta."assetId"
+                WHERE a."ownerId" = %s AND t.value LIKE 'print/scored/no%%'
+            """, (uid,))
             total_scored = gemini_yes + gemini_maybe + gemini_no
 
             queue_depth = count(cur, """

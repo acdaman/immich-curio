@@ -116,8 +116,8 @@ async def _process_burst_group(
     group, dup_discarded = _deduplicate_group(group)
     for asset_id in dup_discarded:
         try:
-            await apply_tag(asset_id, "print/scored/no")
-            logger.info("Discarded duplicate %s → no", asset_id)
+            await apply_tag(asset_id, "print/scored/no/duplicate")
+            logger.info("Discarded duplicate %s → no/duplicate", asset_id)
         except Exception as e:
             logger.error("Failed to tag duplicate %s: %s", asset_id, e)
 
@@ -133,9 +133,9 @@ async def _process_burst_group(
 
     # Case: any member is a favorite → auto-tag, no Gemini
     if any(is_fav for _, is_fav, *_ in group):
-        logger.info("Burst group has favorite(s) — auto-tagging (yes/no)")
+        logger.info("Burst group has favorite(s) — auto-tagging (yes/no/group)")
         for asset_id, is_fav, *_ in group:
-            tag = "print/scored/yes" if is_fav else "print/scored/no"
+            tag = "print/scored/yes" if is_fav else "print/scored/no/group"
             try:
                 await apply_tag(asset_id, tag)
                 logger.info("Auto-tagged %s → %s (burst favorite rule)", asset_id, tag)
@@ -169,7 +169,7 @@ async def _process_burst_group(
         for asset_id, *_ in group:
             if asset_id != single_id:
                 try:
-                    await apply_tag(asset_id, "print/scored/no")
+                    await apply_tag(asset_id, "print/scored/no/group")
                 except Exception:
                     pass
         return
@@ -190,10 +190,10 @@ async def _process_burst_group(
         if asset_id in scored_ids:
             score_val = scores[asset_id]["score"]
             reason = scores[asset_id].get("reason", "")
-            tag_path = f"print/scored/{score_val}"
+            tag_path = "print/scored/yes" if score_val == "yes" else "print/scored/no/group"
         else:
-            logger.warning("Asset %s missing from group scores — tagging no", asset_id)
-            tag_path = "print/scored/no"
+            logger.warning("Asset %s missing from group scores — tagging no/group", asset_id)
+            tag_path = "print/scored/no/group"
             reason = "missing from group response"
         try:
             await apply_tag(asset_id, tag_path)
