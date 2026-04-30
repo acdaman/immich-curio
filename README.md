@@ -23,6 +23,10 @@ Two async coroutines share one event loop:
 | `print/queued` | Bot | Approved, added to Print album |
 | `print/exported` | Exporter | Full-res written to export folder |
 
+## Compatibility
+
+Known to work on **Immich v2.7.4**. Curio validates the database schema on every startup and will exit with an error if it doesn't match expectations, so incompatible versions fail loudly rather than silently misbehaving.
+
 ## Prerequisites
 
 - **Immich** — self-hosted, with:
