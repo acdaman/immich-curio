@@ -2,14 +2,14 @@
 
 > A personal project. It runs in my home lab to help me curate my family photo library for printing — feel free to adapt it.
 
-I have ~16,000 family photos in [Immich](https://immich.app). Picking the best ones to print by hand would take forever. Curio automates the first pass: Gemini Flash scores each photo in the background, and the best candidates are delivered one at a time to a Telegram bot where I approve or reject with a single tap.
+I have ~16,000 family photos in [Immich](https://immich.app). Picking the best ones to print by hand would take forever. Curio automates the first pass: Gemini Flash scores each photo in the background, and the best candidates are delivered one at a time to a Telegram bot where I approve, like, or reject with a single tap.
 
 ## How it works
 
 Two async coroutines share one event loop:
 
 1. **Queue filler** — fetches unscored photos from Immich, sends each to Gemini Flash for scoring, and applies `print/scored/yes`, `print/scored/maybe`, or `print/scored/no` tags. Maintains a pool of 10 reviewed candidates.
-2. **Bot responder** — listens for Telegram button callbacks. On approve: adds to the Print album and queues for export. On reject: marks permanent. Sends the next photo after each decision.
+2. **Bot responder** — listens for Telegram button callbacks and slash commands. Each photo is delivered with three buttons: **Approve** (adds to Print album, queues for export), **Like** (marks as favourite in Immich without printing), or **Reject** (permanent). Sends the next photo after each decision. Commands: `/start` delivers the next queued photo, `/stats` shows a full pipeline and calibration breakdown, `/feedback` sends a sample of recent approved and rejected photos to Gemini and returns an analysis of your taste.
 
 **Tag taxonomy:**
 
