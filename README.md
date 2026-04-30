@@ -49,7 +49,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-The bot will send you a photo within a few seconds of startup. Tap Approve, Skip, or Reject.
+The bot will send you a photo within a few seconds of startup. Tap Approve, Like, or Reject.
 
 ## Configuration
 
