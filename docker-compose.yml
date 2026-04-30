@@ -4,14 +4,20 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      - TZ=Australia/Sydney
+      - TZ=UTC  # override in .env or here: e.g. TZ=America/New_York
     volumes:
       - ./prompt.md:/app/prompt.md:ro
       - ./prompt_group.md:/app/prompt_group.md:ro
-      - /data/syncthing/curio-prints:/exports
+      # Uncomment and adjust if EXPORT_ENABLED=true:
+      # - /your/syncthing/or/nfs/path:/exports
+
+    # Networking: Curio needs to reach the Immich Postgres container.
+    # Option A (recommended): Join Immich's internal Docker network.
+    #   Replace "immich-network" with whatever your Immich stack's network is named.
+    # Option B: Expose Postgres to the host and set DB_HOST=host.docker.internal.
     networks:
-      - postgres-net
+      - immich-network
 
 networks:
-  postgres-net:
+  immich-network:
     external: true

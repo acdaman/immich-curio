@@ -4,8 +4,6 @@ import httpx
 
 from curio.config import get_config
 
-PRINT_ALBUM_ID = "b2f416c7-4f72-4c4c-a138-c7b23978eabc"
-
 # tag value → tag ID, populated lazily and updated on creation
 _tag_cache: dict[str, str] = {}
 
@@ -96,7 +94,7 @@ async def add_to_print_album(asset_id: str) -> None:
 
     async with _client() as client:
         resp = await client.put(
-            f"/api/albums/{PRINT_ALBUM_ID}/assets", json={"ids": [asset_id]}
+            f"/api/albums/{cfg.print_album_id}/assets", json={"ids": [asset_id]}
         )
         resp.raise_for_status()
 

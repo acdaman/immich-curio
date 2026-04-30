@@ -6,7 +6,7 @@ Finds real unscored multi-photo groups, shows what Gemini decides,
 and prints what tags would be applied — without writing anything.
 
 Usage:
-    cd /home/adam/projects/curio
+    cd /path/to/curio
     source .venv/bin/activate
     DB_HOST=localhost IMMICH_URL=http://localhost:2283 python explore/06_test_group_scoring.py
     DB_HOST=localhost IMMICH_URL=http://localhost:2283 python explore/06_test_group_scoring.py --groups 3

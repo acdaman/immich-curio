@@ -5,10 +5,10 @@ Phase 0 exploration: Validate every Immich REST API endpoint.
 Run this to confirm auth header format, request/response shapes, and
 that tag create/assign/delete lifecycle works.
 
-Paste findings into CLAUDE.md under "Validated Immich API Endpoints".
+
 
 Usage:
-    cd /home/adam/projects/curio
+    cd /path/to/curio
     source .venv/bin/activate
     pip install httpx python-dotenv
     python explore/02_immich_api.py
@@ -358,7 +358,7 @@ def main():
     # Summary
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
-    print("SUMMARY — paste into CLAUDE.md 'Validated Immich API Endpoints'")
+    print("SUMMARY")
     print("=" * 60)
     print(f"""
   Auth header:    {working_auth}
@@ -370,7 +370,7 @@ Next steps:
   - Note which body format worked for PUT /api/tags/{{id}}/assets
   - Note which body format worked for DELETE /api/tags/{{id}}/assets
   - Note album name key (albumName vs name)
-  - Record all findings in CLAUDE.md
+
 """)
 
     print("Done.")

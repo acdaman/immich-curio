@@ -21,6 +21,7 @@ class Config(BaseSettings):
     telegram_chat_id: str
 
     immich_public_url: str = ""  # external URL for links, e.g. https://photos.yourdomain.com
+    print_album_id: str  # ID of your "Print" album in Immich (GET /api/albums to find it)
     scoring_prompt_path: str = "/app/prompt.md"
     group_scoring_prompt_path: str = "/app/prompt_group.md"
 
@@ -28,6 +29,7 @@ class Config(BaseSettings):
     burst_window_seconds: int = 60
     burst_group_max_size: int = 15
     export_dir: str = "/exports"
+    export_enabled: bool = False
 
     dry_run: bool = False
     log_level: str = "INFO"

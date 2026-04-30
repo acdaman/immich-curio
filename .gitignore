@@ -11,3 +11,10 @@ build/
 .env
 *.sqlite3
 .DS_Store
+
+# Personal/deployment files — not for the public repo
+CLAUDE.md
+STATE.md
+deploy.sh
+docker-compose.prod.yml
+exports/

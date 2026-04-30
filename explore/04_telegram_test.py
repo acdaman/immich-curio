@@ -13,7 +13,7 @@ This confirms:
   - Max callback_data length is within the 64-byte limit
 
 Usage:
-    cd /home/adam/projects/curio
+    cd /path/to/curio
     source .venv/bin/activate
     pip install python-telegram-bot[asyncio] httpx python-dotenv
     python explore/04_telegram_test.py

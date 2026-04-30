@@ -6,7 +6,7 @@ Fetches N thumbnails from Immich, sends each to Gemini, and prints the scores.
 Iterate on the prompt here before it gets baked into curio/gemini.py.
 
 Usage:
-    cd /home/adam/projects/curio
+    cd /path/to/curio
     source .venv/bin/activate
     pip install httpx google-genai python-dotenv
     python explore/03_gemini_test.py

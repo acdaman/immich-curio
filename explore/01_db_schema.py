@@ -3,10 +3,10 @@
 Phase 0 exploration: Introspect the Immich Postgres schema.
 
 Run this script to validate actual column names and test the queue SQL.
-Paste the output into CLAUDE.md under "Validated DB Schema".
+
 
 Usage:
-    cd /home/adam/projects/curio
+    cd /path/to/curio
     source .venv/bin/activate
     pip install psycopg2-binary python-dotenv
     python explore/01_db_schema.py
@@ -279,7 +279,7 @@ def main():
     # Summary
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
-    print("SUMMARY — paste into CLAUDE.md 'Validated DB Schema' section")
+    print("SUMMARY
     print("=" * 60)
     print(f"""
 Tables found: {list(schema_map.keys())}

@@ -53,11 +53,12 @@ async def run() -> None:
         async def _notify_queue_populated() -> None:
             await send_next_photo(app.bot, cfg.telegram_chat_id)
 
-        exporter_task = asyncio.create_task(exporter_loop())
+        exporter_task = asyncio.create_task(exporter_loop()) if cfg.export_enabled else None
         try:
             await queue_filler_loop(on_queue_populated=_notify_queue_populated)
         finally:
-            exporter_task.cancel()
+            if exporter_task is not None:
+                exporter_task.cancel()
 
         # Reached only on clean shutdown
         await app.updater.stop()

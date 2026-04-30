@@ -5,7 +5,7 @@ Phase 0 exploration: Discover timestamp/EXIF schema and measure burst group size
 Run this before implementing burst group processing.
 
 Usage:
-    cd /home/adam/projects/curio
+    cd /path/to/curio
     source .venv/bin/activate
     python explore/05_burst_groups.py
 """
@@ -325,7 +325,7 @@ def main():
     # Summary
     # -------------------------------------------------------------------------
     print("\n" + "=" * 60)
-    print("SUMMARY — paste relevant parts into CLAUDE.md")
+    print("SUMMARY")
     print("=" * 60)
     print(f"""
 asset_exif table exists: {asset_exif_exists}
