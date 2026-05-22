@@ -24,7 +24,7 @@ from curio.gemini import (
     submit_group_batch_job,
     submit_single_batch_job,
 )
-from curio.immich import apply_tag, get_thumbnail, remove_tag
+from curio.immich import apply_tag, delete_tag, get_thumbnail, remove_tag
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,10 @@ async def _apply_batch_scores(job_id: str, asset_ids: list[str], result_text: st
         await apply_tag(asset_id, tag_path)
         await remove_tag(asset_id, batch_tag)
         logger.info("Batch-scored %s → %s (%s)", asset_id, tag_path, reason)
+    try:
+        await delete_tag(batch_tag)
+    except Exception as e:
+        logger.warning("Failed to delete batch tag %s: %s", batch_tag, e)
 
 
 async def _release_batch_assets(job_id: str, asset_ids: list[str], reason: str) -> None:
@@ -101,6 +105,10 @@ async def _release_batch_assets(job_id: str, asset_ids: list[str], reason: str) 
             await remove_tag(asset_id, batch_tag)
         except Exception as e:
             logger.error("Failed to remove batch tag from %s: %s", asset_id, e)
+    try:
+        await delete_tag(batch_tag)
+    except Exception as e:
+        logger.warning("Failed to delete batch tag %s: %s", batch_tag, e)
 
 
 async def _process_completed_batches(

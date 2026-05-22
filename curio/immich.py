@@ -86,6 +86,20 @@ async def remove_tag(asset_id: str, tag_path: str) -> None:
         resp.raise_for_status()
 
 
+async def delete_tag(tag_path: str) -> None:
+    """Delete the tag entity itself from Immich (not just the asset association)."""
+    cfg = get_config()
+    if cfg.dry_run:
+        print(f"[DRY RUN] delete_tag({tag_path!r})")
+        return
+
+    async with _client() as client:
+        tag_id = await _ensure_tag(client, tag_path)
+        resp = await client.delete(f"/api/tags/{tag_id}")
+        resp.raise_for_status()
+        _tag_cache.pop(tag_path, None)
+
+
 async def add_to_print_album(asset_id: str) -> None:
     cfg = get_config()
     if cfg.dry_run:
