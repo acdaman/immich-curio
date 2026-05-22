@@ -15,7 +15,7 @@ class Config(BaseSettings):
     db_password: str
 
     gemini_api_key: str
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
 
     telegram_bot_token: str
     telegram_chat_id: str
@@ -25,7 +25,8 @@ class Config(BaseSettings):
     scoring_prompt_path: str = "/app/prompt.md"
     group_scoring_prompt_path: str = "/app/prompt_group.md"
 
-    queue_target_size: int = 10
+    queue_target_size: int = 40
+    queue_batch_trigger: int = 20
     burst_window_seconds: int = 60
     burst_group_max_size: int = 15
     export_dir: str = "/exports"

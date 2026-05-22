@@ -1,4 +1,4 @@
-"""Queue filler coroutine — scores unscored photos and maintains the candidate pool."""
+"""Queue filler — submits Gemini batch scoring jobs and applies results."""
 
 import asyncio
 import logging
@@ -6,45 +6,30 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from curio.config import get_config
-from curio.db import get_burst_peers, get_queue_depth, get_unscored_asset_ids, has_pending_sent_photo
-from curio.gemini import score_photo, score_photo_group
-from curio.immich import apply_tag, get_thumbnail
+from curio.db import (
+    get_active_batch_job_ids,
+    get_batch_assets,
+    get_burst_peers,
+    get_pending_batch_count,
+    get_queue_depth,
+    get_unscored_asset_ids,
+    has_pending_sent_photo,
+)
+from curio.gemini import (
+    SUCCESS_STATE,
+    get_batch_result,
+    is_terminal,
+    parse_batch_result,
+    poll_batch_job,
+    submit_group_batch_job,
+    submit_single_batch_job,
+)
+from curio.immich import apply_tag, get_thumbnail, remove_tag
 
 logger = logging.getLogger(__name__)
 
-_FULL_QUEUE_SLEEP = 60   # seconds to wait when queue is already at target
+_FULL_QUEUE_SLEEP = 60   # seconds to wait when effective queue is at target
 _NO_ASSETS_SLEEP = 300   # seconds to wait when there are no unscored assets left
-
-
-async def _score_and_tag(asset_id: str, is_favorite: bool = False) -> None:
-    if is_favorite:
-        try:
-            await apply_tag(asset_id, "print/scored/yes/auto")
-            logger.info("Auto-scored %s → yes/auto (favorite)", asset_id)
-        except Exception as e:
-            logger.error("Failed to apply tag print/scored/yes/auto to %s: %s", asset_id, e)
-        return
-
-    try:
-        image_bytes = await get_thumbnail(asset_id)
-    except Exception as e:
-        logger.warning("Failed to fetch thumbnail for %s: %s", asset_id, e)
-        return
-
-    result = await score_photo(image_bytes, asset_id)  # includes 13s rate-limit sleep
-    if result is None:
-        logger.warning("Gemini scoring failed for %s — skipping", asset_id)
-        return
-
-    score = result["score"]
-    reason = result["reason"]
-    tag_path = f"print/scored/{score}"
-
-    try:
-        await apply_tag(asset_id, tag_path)
-        logger.info("Scored %s → %s (%s)", asset_id, score, reason)
-    except Exception as e:
-        logger.error("Failed to apply tag %s to %s: %s", tag_path, asset_id, e)
 
 
 def _deduplicate_group(
@@ -71,11 +56,10 @@ def _deduplicate_group(
     discarded: list[str] = []
 
     for dup_id, dupes in by_dup.items():
-        # Keep highest resolution; break ties by keeping favorite; then first seen
         best = max(
             dupes,
             key=lambda x: (
-                x[1],               # is_favorite first
+                x[1],                        # is_favorite first
                 (x[2] or 0) * (x[3] or 0),  # then resolution
             ),
         )
@@ -85,12 +69,97 @@ def _deduplicate_group(
     return kept, discarded
 
 
-async def _process_burst_group(
+async def _apply_batch_scores(job_id: str, asset_ids: list[str], result_text: str) -> None:
+    """Parse batch result and apply score tags; remove the batch tag from all assets."""
+    batch_tag = f"print/scored/batch/{job_id}"
+    parsed = parse_batch_result(result_text, asset_ids)
+
+    if parsed is None:
+        logger.warning("Cannot parse batch result for job %s — releasing assets", job_id)
+        await _release_batch_assets(job_id, asset_ids, "parse failure")
+        return
+
+    for asset_id in asset_ids:
+        entry = parsed.get(asset_id, {})
+        score_val = entry.get("score", "no")
+        reason = entry.get("reason", "")
+        if len(asset_ids) == 1:
+            tag_path = f"print/scored/{score_val}"
+        else:
+            tag_path = "print/scored/yes" if score_val == "yes" else "print/scored/no/group"
+        await apply_tag(asset_id, tag_path)
+        await remove_tag(asset_id, batch_tag)
+        logger.info("Batch-scored %s → %s (%s)", asset_id, tag_path, reason)
+
+
+async def _release_batch_assets(job_id: str, asset_ids: list[str], reason: str) -> None:
+    """Remove batch tags so assets return to the unscored pool."""
+    batch_tag = f"print/scored/batch/{job_id}"
+    logger.warning("Releasing %d assets from batch %s: %s", len(asset_ids), job_id, reason)
+    for asset_id in asset_ids:
+        try:
+            await remove_tag(asset_id, batch_tag)
+        except Exception as e:
+            logger.error("Failed to remove batch tag from %s: %s", asset_id, e)
+
+
+async def _process_completed_batches(
+    on_queue_populated: Callable[[], Coroutine[Any, Any, None]] | None = None,
+) -> None:
+    """Poll all active batch jobs and apply results or release failed assets."""
+    try:
+        job_ids = get_active_batch_job_ids()
+    except Exception as e:
+        logger.error("Failed to get active batch job IDs: %s", e)
+        return
+
+    if not job_ids:
+        return
+
+    depth_before = get_queue_depth()
+
+    for job_id in job_ids:
+        try:
+            state = await asyncio.to_thread(poll_batch_job, job_id)
+        except Exception as e:
+            logger.warning("Failed to poll batch job %s: %s", job_id, e)
+            continue
+
+        if not is_terminal(state):
+            logger.debug("Batch job %s still running (%s)", job_id, state)
+            continue
+
+        asset_ids = get_batch_assets(job_id)
+        if not asset_ids:
+            logger.warning("No assets found for completed batch job %s", job_id)
+            continue
+
+        if state == SUCCESS_STATE:
+            try:
+                result_text = await asyncio.to_thread(get_batch_result, job_id)
+                if result_text:
+                    await _apply_batch_scores(job_id, asset_ids, result_text)
+                else:
+                    await _release_batch_assets(job_id, asset_ids, "empty response")
+            except Exception as e:
+                logger.error("Error processing batch %s results: %s", job_id, e)
+                await _release_batch_assets(job_id, asset_ids, str(e))
+        else:
+            await _release_batch_assets(job_id, asset_ids, f"terminal state: {state}")
+
+    if on_queue_populated and depth_before == 0:
+        depth_after = get_queue_depth()
+        if depth_after > 0 and not has_pending_sent_photo():
+            logger.info("Queue was empty and now has photos — triggering send")
+            await on_queue_populated()
+
+
+async def _submit_burst_group(
     seed_id: str,
     seed_is_favorite: bool,
     processed: set[str],
 ) -> None:
-    """Find all burst peers of seed_id, score the group, apply tags.
+    """Find burst peers for seed_id, handle deduplication and favourites, submit a batch job.
 
     Updates `processed` in-place with every asset ID handled.
     """
@@ -99,20 +168,31 @@ async def _process_burst_group(
     try:
         group = get_burst_peers(seed_id, window_seconds=cfg.burst_window_seconds)
     except Exception as e:
-        logger.warning("get_burst_peers failed for %s: %s — falling back to single", seed_id, e)
+        logger.warning("get_burst_peers failed for %s: %s — single photo", seed_id, e)
         group = []
 
-    # No EXIF → fall back to single-photo scoring
     if not group:
-        logger.debug("No burst peers for %s — single-photo scoring", seed_id)
-        await _score_and_tag(seed_id, seed_is_favorite)
+        # No EXIF data: treat as a single standalone photo
         processed.add(seed_id)
+        if seed_is_favorite:
+            try:
+                await apply_tag(seed_id, "print/scored/yes/auto")
+                logger.info("Auto-scored %s → yes/auto (favorite)", seed_id)
+            except Exception as e:
+                logger.error("Failed to apply yes/auto tag to %s: %s", seed_id, e)
+            return
+        try:
+            image_bytes = await get_thumbnail(seed_id)
+            job_id = await submit_single_batch_job(image_bytes, seed_id)
+            await apply_tag(seed_id, f"print/scored/batch/{job_id}")
+        except Exception as e:
+            logger.warning("Failed to submit batch for %s: %s — skipping", seed_id, e)
         return
 
-    # Mark all peers as processed before any async work
+    # Mark all peers as handled before any async work
     processed.update(item[0] for item in group)
 
-    # Deduplicate within the group (Immich-flagged duplicates)
+    # Deduplicate Immich-flagged duplicates within the burst
     group, dup_discarded = _deduplicate_group(group)
     for asset_id in dup_discarded:
         try:
@@ -121,17 +201,17 @@ async def _process_burst_group(
         except Exception as e:
             logger.error("Failed to tag duplicate %s: %s", asset_id, e)
 
-    # Cap group size — keep seed + earliest N-1 others (chronological order from DB)
+    # Cap group size — seed + earliest N-1 others (chronological order from DB)
     max_size = cfg.burst_group_max_size
     if len(group) > max_size:
-        logger.info("Burst group for %s has %d members — capping to %d", seed_id, len(group), max_size)
         seed_entry = next((g for g in group if g[0] == seed_id), group[0])
         others = [g for g in group if g[0] != seed_id]
-        group = [seed_entry] + others[: max_size - 1]
+        group = [seed_entry] + others[:max_size - 1]
+        logger.info("Capped burst group to %d for seed %s", max_size, seed_id)
 
     logger.info("Processing burst group of %d (seed: %s)", len(group), seed_id)
 
-    # Auto-tag any favourites in the group immediately, then let Gemini review all
+    # Auto-tag any favourites immediately; still pass full group to Gemini
     for asset_id, is_fav, *_ in group:
         if is_fav:
             try:
@@ -140,17 +220,19 @@ async def _process_burst_group(
             except Exception as e:
                 logger.error("Failed to tag %s → yes/auto: %s", asset_id, e)
 
-    if any(is_fav for _, is_fav, *_ in group):
-        logger.info("Burst group has favourite(s) — passing full group to Gemini with [FAVOURITE] markers")
-
-    # Case: single photo after deduplication
+    # Single photo after deduplication
     if len(group) == 1:
         asset_id, is_fav, *_ = group[0]
         if not is_fav:
-            await _score_and_tag(asset_id, is_fav)
+            try:
+                image_bytes = await get_thumbnail(asset_id)
+                job_id = await submit_single_batch_job(image_bytes, asset_id)
+                await apply_tag(asset_id, f"print/scored/batch/{job_id}")
+            except Exception as e:
+                logger.warning("Failed to submit batch for %s: %s — skipping", asset_id, e)
         return
 
-    # Case: multi-photo group → batch Gemini review
+    # Multi-photo group: fetch thumbnails, submit group batch job
     thumbnails: list[tuple[bytes, str, bool]] = []
     for asset_id, is_fav, *_ in group:
         try:
@@ -164,43 +246,29 @@ async def _process_burst_group(
         return
 
     if len(thumbnails) == 1:
-        single_id = thumbnails[0][1]
-        single_is_fav = next(is_fav for aid, is_fav, *_ in group if aid == single_id)
-        await _score_and_tag(single_id, single_is_fav)
-        for asset_id, *_ in group:
-            if asset_id != single_id:
+        # Reduced to one photo after thumbnail failures
+        asset_id, is_fav = thumbnails[0][1], thumbnails[0][2]
+        for other_id, *_ in group:
+            if other_id != asset_id:
                 try:
-                    await apply_tag(asset_id, "print/scored/no/group")
+                    await apply_tag(other_id, "print/scored/no/group")
                 except Exception:
                     pass
-        return
-
-    scores = await score_photo_group(thumbnails)  # includes 13s rate-limit sleep
-
-    if scores is None:
-        logger.warning("Group scoring failed for burst (seed %s) — tagging all no", seed_id)
-        for asset_id, *_ in group:
+        if not is_fav:
             try:
-                await apply_tag(asset_id, "print/scored/no")
+                job_id = await submit_single_batch_job(thumbnails[0][0], asset_id)
+                await apply_tag(asset_id, f"print/scored/batch/{job_id}")
             except Exception as e:
-                logger.error("Failed to tag %s no after group failure: %s", asset_id, e)
+                logger.warning("Failed to submit batch for %s: %s — skipping", asset_id, e)
         return
 
-    scored_ids = set(scores.keys())
-    for asset_id, *_ in group:
-        if asset_id in scored_ids:
-            score_val = scores[asset_id]["score"]
-            reason = scores[asset_id].get("reason", "")
-            tag_path = "print/scored/yes" if score_val == "yes" else "print/scored/no/group"
-        else:
-            logger.warning("Asset %s missing from group scores — tagging no/group", asset_id)
-            tag_path = "print/scored/no/group"
-            reason = "missing from group response"
-        try:
-            await apply_tag(asset_id, tag_path)
-            logger.info("Group-scored %s → %s (%s)", asset_id, tag_path, reason)
-        except Exception as e:
-            logger.error("Failed to tag %s → %s: %s", asset_id, tag_path, e)
+    try:
+        job_id = await submit_group_batch_job(thumbnails)
+        for _, asset_id, _ in thumbnails:
+            await apply_tag(asset_id, f"print/scored/batch/{job_id}")
+        logger.info("Submitted group batch job %s for %d photos", job_id, len(thumbnails))
+    except Exception as e:
+        logger.warning("Failed to submit group batch (seed %s): %s — skipping", seed_id, e)
 
 
 async def queue_filler_loop(
@@ -211,38 +279,45 @@ async def queue_filler_loop(
 
     while True:
         try:
-            depth = get_queue_depth()
-            logger.debug("Queue depth: %d / %d", depth, cfg.queue_target_size)
+            # Always check for completed batch jobs first (also handles restart recovery)
+            await _process_completed_batches(on_queue_populated)
 
-            if depth >= cfg.queue_target_size:
+            queue_depth = get_queue_depth()
+            pending_batch = get_pending_batch_count()
+            effective_depth = queue_depth + pending_batch
+            logger.debug(
+                "Queue depth: %d scored + %d pending batch = %d effective / %d target",
+                queue_depth, pending_batch, effective_depth, cfg.queue_target_size,
+            )
+
+            if effective_depth >= cfg.queue_target_size:
                 await asyncio.sleep(_FULL_QUEUE_SLEEP)
                 continue
 
-            was_empty = depth == 0
-            asset_ids = get_unscored_asset_ids(cfg.queue_target_size)
+            if effective_depth > cfg.queue_batch_trigger:
+                # Healthy but below target — existing batches will fill the gap
+                await asyncio.sleep(_FULL_QUEUE_SLEEP)
+                continue
+
+            # Effective depth at or below trigger: submit more batch jobs
+            needed = cfg.queue_target_size - effective_depth
+            asset_ids = get_unscored_asset_ids(needed)
 
             if not asset_ids:
                 logger.info("No unscored assets available — sleeping %ds", _NO_ASSETS_SLEEP)
                 await asyncio.sleep(_NO_ASSETS_SLEEP)
                 continue
 
-            logger.info("Filling queue (%d/%d) — %d candidate seeds", depth, cfg.queue_target_size, len(asset_ids))
+            logger.info(
+                "Effective queue at %d (trigger: %d) — submitting batch jobs for %d candidates",
+                effective_depth, cfg.queue_batch_trigger, len(asset_ids),
+            )
             processed: set[str] = set()
 
             for seed_id, is_favorite in asset_ids:
                 if seed_id in processed:
-                    continue  # already handled as burst peer of an earlier seed
-
-                await _process_burst_group(seed_id, is_favorite, processed)
-
-                # Re-check after each group — a burst group might fill the queue on its own
-                if get_queue_depth() >= cfg.queue_target_size:
-                    logger.debug("Queue full after group — stopping inner loop")
-                    break
-
-            if was_empty and on_queue_populated and not has_pending_sent_photo():
-                logger.info("Queue was empty and now has photos — triggering send")
-                await on_queue_populated()
+                    continue
+                await _submit_burst_group(seed_id, is_favorite, processed)
 
         except Exception as e:
             logger.error("Queue filler error: %s — retrying in 60s", e)

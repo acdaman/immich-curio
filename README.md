@@ -2,22 +2,26 @@
 
 > A personal project. It runs in my home lab to help me curate my family photo library for printing — feel free to adapt it.
 
-I have ~16,000 family photos in [Immich](https://immich.app). Picking the best ones to print by hand would take forever. Curio automates the first pass: Gemini Flash scores each photo in the background, and the best candidates are delivered one at a time to a Telegram bot where I approve, like, or reject with a single tap.
+I have ~16,000 family photos in [Immich](https://immich.app). Picking the best ones to print by hand would take forever. Curio automates the first pass: Gemini scores each photo in the background, and the best candidates are delivered one at a time to a Telegram bot where I approve, like, or reject with a single tap.
 
 ## How it works
 
 Two async coroutines share one event loop:
 
-1. **Queue filler** — fetches unscored photos from Immich, sends each to Gemini Flash for scoring, and applies `print/scored/yes`, `print/scored/maybe`, or `print/scored/no` tags. Maintains a pool of 10 reviewed candidates.
+1. **Queue filler** — fetches unscored photos from Immich and submits them to the [Gemini Batch API](https://ai.google.dev/gemini-api/docs/batch-api) for scoring at 50% of standard cost. Groups of burst photos (taken within 60 s on the same camera) are scored together so Gemini picks the best frame from each moment. Results are applied within minutes; in-flight jobs are tracked via Immich tags (`print/scored/batch/*`) so state survives restarts. Maintains a pool of ~40 reviewed candidates.
 2. **Bot responder** — listens for Telegram button callbacks and slash commands. Each photo is delivered with three buttons: **Approve** (adds to Print album, queues for export), **Like** (marks as favourite in Immich without printing), or **Reject** (permanent). Sends the next photo after each decision. Commands: `/start` delivers the next queued photo, `/stats` shows a full pipeline and calibration breakdown, `/feedback` sends a sample of recent approved and rejected photos to Gemini and returns an analysis of your taste.
 
 **Tag taxonomy:**
 
 | Tag | Written by | Meaning |
 |---|---|---|
+| `print/scored/batch/{id}` | Queue filler | Submitted to Gemini batch job, awaiting result |
 | `print/scored/yes` | Queue filler | Gemini approved — in queue |
 | `print/scored/maybe` | Queue filler | Gemini uncertain — in queue |
-| `print/scored/no` | Queue filler | Gemini rejected |
+| `print/scored/no` | Queue filler | Gemini rejected (single photo) |
+| `print/scored/no/group` | Queue filler | Gemini rejected (lost to a better burst frame) |
+| `print/scored/no/duplicate` | Queue filler | Discarded as Immich-flagged duplicate |
+| `print/scored/yes/auto` | Queue filler | Auto-approved (Immich favourite) |
 | `print/telegram/sent` | Bot | Photo sent to Telegram, awaiting decision |
 | `print/rejected` | Bot | Rejected — permanent |
 | `print/queued` | Bot | Approved, added to Print album |
@@ -34,7 +38,7 @@ Known to work on **Immich v2.7.4**. Curio validates the database schema on every
   - Your user UUID (Settings → Account)
   - A "Print" album (create it, then find its ID via `GET /api/albums`)
   - A read-only Postgres user (see [Database setup](#database-setup) below)
-- **Gemini API key** — [Google AI Studio](https://aistudio.google.com/apikey) — free tier works (5 RPM, ~13 s/photo)
+- **Gemini API key** — [Google AI Studio](https://aistudio.google.com/apikey) — **paid tier required** for Batch API access
 - **Telegram bot** — create one with [@BotFather](https://t.me/botfather), then get your chat ID from [@userinfobot](https://t.me/userinfobot)
 - **Docker + Docker Compose**
 
@@ -49,7 +53,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-The bot will send you a photo within a few seconds of startup. Tap Approve, Like, or Reject.
+The bot will send you a photo once the first batch of scoring jobs completes (typically within a few minutes of startup).
 
 ## Configuration
 
@@ -67,11 +71,12 @@ All configuration is via environment variables in `.env`. See `.env.example` for
 | `DB_NAME` | No | `immich` | Database name |
 | `DB_USER` | No | `immich_reader` | Postgres user |
 | `DB_PASSWORD` | Yes | — | Postgres password |
-| `GEMINI_API_KEY` | Yes | — | Google Gemini API key |
-| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
+| `GEMINI_API_KEY` | Yes | — | Google Gemini API key (paid tier required) |
+| `GEMINI_MODEL` | No | `gemini-3.5-flash` | Gemini model name |
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Telegram bot token |
 | `TELEGRAM_CHAT_ID` | Yes | — | Your Telegram chat ID |
-| `QUEUE_TARGET_SIZE` | No | `10` | Scored candidates to keep in queue |
+| `QUEUE_TARGET_SIZE` | No | `40` | Scored candidates to keep in queue |
+| `QUEUE_BATCH_TRIGGER` | No | `20` | Submit new batch jobs when queue drops to this level |
 | `EXPORT_ENABLED` | No | `false` | Enable full-res export (see below) |
 | `EXPORT_DIR` | No | `/exports` | Container path to write exports |
 | `TZ` | No | `UTC` | Timezone (e.g. `America/New_York`) |
@@ -138,7 +143,6 @@ The `explore/` directory contains the Phase 0 scripts used to validate each inte
 
 ## Limitations
 
-- **Gemini free tier:** 5 RPM → scoring is slow (~13 s/photo). Queue fills gradually.
 - **Single user:** Scoped to one `IMMICH_USER_ID`. Multi-user support is not planned.
 - **Telegram preview:** Telegram compresses photos. Full resolution is only in the export.
 - **No print ordering:** The pipeline stops at "approved and exported." Ordering prints is manual.

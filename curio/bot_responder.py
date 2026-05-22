@@ -7,7 +7,7 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from curio.config import get_config
-from curio.db import get_next_queued_asset_id, get_sample_approved_asset_ids, get_sample_rejected_asset_ids, get_stats
+from curio.db import get_next_queued_asset_id, get_pending_batch_count, get_sample_approved_asset_ids, get_sample_rejected_asset_ids, get_stats
 from curio.gemini import analyze_decisions
 from curio.immich import add_to_print_album, apply_tag, get_asset_info, get_thumbnail, mark_favorite
 
@@ -132,6 +132,7 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     cfg = get_config()
     try:
         s = get_stats()
+        pending_batch = get_pending_batch_count()
     except Exception as e:
         logger.error("Stats query failed: %s", e)
         await context.bot.send_message(chat_id=cfg.telegram_chat_id, text=f"Stats failed: {e}")
@@ -144,6 +145,7 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "",
         "Pipeline",
         f"  Unscored backlog {s['unscored']:>7,}",
+        f"  Batches pending  {pending_batch:>7,}",
         f"  Gemini yes       {s['gemini_yes']:>7,}  ({_pct(s['gemini_yes'], s['total_scored'])})",
         f"  Auto yes (fav)   {s['auto_yes']:>7,}  ({_pct(s['auto_yes'], s['total_scored'])})",
         f"  Gemini maybe     {s['gemini_maybe']:>7,}  ({_pct(s['gemini_maybe'], s['total_scored'])})",

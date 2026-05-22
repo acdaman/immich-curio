@@ -142,6 +142,50 @@ def get_burst_peers(
                     for r in cur.fetchall()]
 
 
+def get_pending_batch_count() -> int:
+    """Count assets currently tagged with any print/scored/batch/* tag."""
+    cfg = get_config()
+    sql = """
+        SELECT COUNT(DISTINCT ta."assetId") FROM tag_asset ta
+        JOIN tag t ON t.id = ta."tagId"
+        JOIN asset a ON a.id = ta."assetId"
+        WHERE a."ownerId" = %s AND t.value LIKE 'print/scored/batch/%%'
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (cfg.immich_user_id,))
+            return cur.fetchone()[0]
+
+
+def get_active_batch_job_ids() -> list[str]:
+    """Return distinct job_id segments from active batch tags."""
+    cfg = get_config()
+    sql = """
+        SELECT DISTINCT t.value FROM tag t
+        JOIN tag_asset ta ON t.id = ta."tagId"
+        JOIN asset a ON a.id = ta."assetId"
+        WHERE a."ownerId" = %s AND t.value LIKE 'print/scored/batch/%%'
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (cfg.immich_user_id,))
+            return [row[0].split("/")[-1] for row in cur.fetchall()]
+
+
+def get_batch_assets(job_id: str) -> list[str]:
+    """Return asset_ids tagged with print/scored/batch/{job_id}."""
+    cfg = get_config()
+    sql = """
+        SELECT ta."assetId" FROM tag_asset ta
+        JOIN tag t ON t.id = ta."tagId"
+        WHERE t.value = %s
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (f"print/scored/batch/{job_id}",))
+            return [row[0] for row in cur.fetchall()]
+
+
 def get_sample_approved_asset_ids(limit: int) -> list[str]:
     """Return a random sample of assets approved for printing (tagged print/queued)."""
     cfg = get_config()
